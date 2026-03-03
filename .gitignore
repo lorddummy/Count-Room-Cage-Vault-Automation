@@ -29,6 +29,7 @@ logs/
 data/local/
 *.db
 *.sqlite
+backend/count_room.db
 
 # Test / coverage
 .coverage

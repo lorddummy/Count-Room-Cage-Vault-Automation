@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Count Room / Cage / Vault - Dashboard</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 1rem; background: #0f172a; color: #e2e8f0; }
+    h1 { font-size: 1.5rem; margin-bottom: 1rem; }
+    h2 { font-size: 1.1rem; color: #94a3b8; margin: 1.5rem 0 0.5rem; }
+    a { color: #38bdf8; }
+    section { background: #1e293b; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid #334155; }
+    th { color: #94a3b8; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .ok { color: #4ade80; }
+    .warn { color: #fbbf24; }
+    .err { color: #f87171; }
+    button { background: #3b82f6; color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; margin-right: 0.5rem; margin-bottom: 0.5rem; }
+    button:hover { background: #2563eb; }
+    button.secondary { background: #475569; }
+    pre { background: #0f172a; padding: 0.75rem; border-radius: 6px; overflow-x: auto; font-size: 0.85rem; }
+    .tabs { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
+    .tabs button { margin-bottom: 0; }
+    .tabs button.active { background: #1d4ed8; }
+    #content { min-height: 200px; }
+  </style>
+</head>
+<body>
+  <h1>Count Room / Cage / Vault Automation</h1>
+  <p><a href="/docs">API Docs (OpenAPI)</a> &middot; <a href="/health">Health</a></p>
+
+  <div class="tabs">
+    <button class="active" data-tab="overview">Overview</button>
+    <button data-tab="count-room">Count Room</button>
+    <button data-tab="cage">Cage</button>
+    <button data-tab="vault">Vault</button>
+    <button data-tab="tables">Tables</button>
+    <button data-tab="compliance">Compliance</button>
+  </div>
+
+  <div id="content">
+    <section id="overview">
+      <h2>Overview</h2>
+      <p>Loading...</p>
+    </section>
+  </div>
+
+  <script>
+    const API = ''; // same origin
+    async function get(path) {
+      const r = await fetch(API + path);
+      if (!r.ok) throw new Error(r.statusText);
+      return r.json();
+    }
+    function fmtCents(c) { return c == null ? '-' : '$' + (c / 100).toLocaleString('en-US', { minimumFractionDigits: 2 }); }
+
+    const tabs = {
+      overview: async () => {
+        const [props, sessions, drawers, vault] = await Promise.all([
+          get('/count-room/properties'),
+          get('/count-room/sessions?status=open'),
+          get('/cage/drawers?status=open'),
+          props.length ? get(`/vault/balance/${props[0].id}`) : Promise.resolve(null),
+        ]);
+        const prop = props[0];
+        let html = '<table><tr><th>Property</th><th>Open count sessions</th><th>Open drawers</th><th>Vault balance</th></tr><tr>';
+        html += `<td>${prop ? prop.name + ' (' + prop.code + ')' : '-'}</td>`;
+        html += `<td>${sessions.length}</td>`;
+        html += `<td>${drawers.length}</td>`;
+        html += `<td class="num">${vault ? fmtCents(vault.balance_cents) : '-'}</td></tr></table>`;
+        html += '<p>Use the tabs to run count room sessions, cage drawers, vault transactions, table inventory, and compliance reports.</p>';
+        return html;
+      },
+      'count-room': async () => {
+        const [props, sessions, boxes] = await Promise.all([
+          get('/count-room/properties'),
+          get('/count-room/sessions'),
+          get('/count-room/drop-boxes'),
+        ]);
+        let html = '<h2>Sessions</h2><table><tr><th>ID</th><th>Property</th><th>Status</th><th>Started</th></tr>';
+        sessions.slice(0, 10).forEach(s => {
+          html += `<tr><td>${s.id}</td><td>${s.property_id}</td><td>${s.status}</td><td>${s.started_at}</td></tr>`;
+        });
+        html += '</table><h2>Drop boxes</h2><table><tr><th>Barcode</th><th>Machine</th><th>Bank</th><th>Expected</th></tr>';
+        boxes.forEach(b => {
+          html += `<tr><td>${b.barcode}</td><td>${b.machine_id}</td><td>${b.bank || '-'}</td><td class="num">${fmtCents(b.expected_cents)}</td></tr>`;
+        });
+        html += '</table>';
+        return html;
+      },
+      cage: async () => {
+        const [drawers, cashiers] = await Promise.all([
+          get('/cage/drawers'),
+          get('/cage/cashiers'),
+        ]);
+        let html = '<h2>Cashiers</h2><table><tr><th>ID</th><th>Name</th><th>Employee ID</th></tr>';
+        cashiers.forEach(c => { html += `<tr><td>${c.id}</td><td>${c.name}</td><td>${c.employee_id}</td></tr>`; });
+        html += '</table><h2>Drawers</h2><table><tr><th>ID</th><th>Cashier</th><th>Opening</th><th>Expected</th><th>Closing</th><th>Status</th></tr>';
+        drawers.slice(0, 15).forEach(d => {
+          html += `<tr><td>${d.id}</td><td>${d.cashier_id}</td><td class="num">${fmtCents(d.opening_cents)}</td><td class="num">${fmtCents(d.expected_cents)}</td><td class="num">${fmtCents(d.closing_cents)}</td><td>${d.status}</td></tr>`;
+        });
+        html += '</table>';
+        return html;
+      },
+      vault: async () => {
+        const props = await get('/count-room/properties');
+        if (!props.length) return '<p>No properties.</p>';
+        const [balance, txs] = await Promise.all([
+          get(`/vault/balance/${props[0].id}`),
+          get(`/vault/transactions?property_id=${props[0].id}&limit=20`),
+        ]);
+        let html = `<h2>Vault balance (${props[0].name})</h2><p class="num" style="font-size:1.5rem">${fmtCents(balance.balance_cents)}</p>`;
+        html += '<h2>Recent transactions</h2><table><tr><th>Type</th><th>Amount</th><th>Time</th></tr>';
+        txs.forEach(t => {
+          html += `<tr><td>${t.type}</td><td class="num">${fmtCents(t.amount_cents)}</td><td>${t.created_at}</td></tr>`;
+        });
+        html += '</table>';
+        return html;
+      },
+      tables: async () => {
+        const [tables, inv] = await Promise.all([
+          get('/tables/'),
+          get('/tables/inventory'),
+        ]);
+        let html = '<h2>Tables</h2><table><tr><th>ID</th><th>Name</th><th>Game</th><th>Bank</th></tr>';
+        tables.forEach(t => { html += `<tr><td>${t.id}</td><td>${t.name}</td><td>${t.game_type}</td><td>${t.bank || '-'}</td></tr>`; });
+        html += '</table><h2>Table inventory (win/loss)</h2><table><tr><th>Table</th><th>Date</th><th>Opening</th><th>Fills</th><th>Credits</th><th>Drop</th><th>Closing</th><th>Win/Loss</th></tr>';
+        inv.slice(0, 15).forEach(i => {
+          html += `<tr><td>${i.table_id}</td><td>${i.date}</td><td class="num">${fmtCents(i.opening_cents)}</td><td class="num">${fmtCents(i.fills_cents)}</td><td class="num">${fmtCents(i.credits_cents)}</td><td class="num">${fmtCents(i.drop_cents)}</td><td class="num">${fmtCents(i.closing_cents)}</td><td class="num">${i.win_loss_cents >= 0 ? 'ok' : 'err'}">${fmtCents(i.win_loss_cents)}</td></tr>`;
+        });
+        html += '</table>';
+        return html;
+      },
+      compliance: async () => {
+        const props = await get('/count-room/properties');
+        if (!props.length) return '<p>No properties.</p>';
+        const pid = props[0].id;
+        const today = new Date().toISOString().slice(0, 10);
+        const [slotReport, tableReport, varReport] = await Promise.all([
+          get(`/compliance/reports/daily-slot-drop?property_id=${pid}&report_date=${today}`),
+          get(`/compliance/reports/daily-table?property_id=${pid}&report_date=${today}`),
+          get(`/compliance/reports/variances?property_id=${pid}&min_cents=50`),
+        ]);
+        let html = '<h2>Daily slot drop report (' + today + ')</h2>';
+        html += '<p>Total drop: ' + fmtCents(slotReport.total_drop_cents) + ' &middot; Total variance: ' + fmtCents(slotReport.total_variance_cents) + '</p>';
+        html += '<pre>' + JSON.stringify(slotReport, null, 2) + '</pre>';
+        html += '<h2>Daily table report (' + today + ')</h2><pre>' + JSON.stringify(tableReport, null, 2) + '</pre>';
+        html += '<h2>Variances (min $0.50)</h2><pre>' + JSON.stringify(varReport, null, 2) + '</pre>';
+        return html;
+      },
+    };
+
+    document.querySelectorAll('.tabs button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tabs button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const tab = btn.dataset.tab;
+        const section = document.getElementById('content');
+        section.innerHTML = '<section><p>Loading...</p></section>';
+        tabs[tab]().then(html => {
+          section.innerHTML = '<section>' + html + '</section>';
+        }).catch(e => {
+          section.innerHTML = '<section><p class="err">Error: ' + e.message + '</p></section>';
+        });
+      });
+    });
+
+    tabs.overview().then(html => {
+      document.getElementById('content').innerHTML = '<section>' + html + '</section>';
+    }).catch(e => {
+      document.getElementById('content').innerHTML = '<section><p class="err">Error: ' + e.message + '</p></section>';
+    });
+  </script>
+</body>
+</html>

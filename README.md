@@ -37,10 +37,33 @@ CAGE (cashiers) ←→ VAULT (fills, replenishment)
 Count-Room-Cage-Vault-Automation/
 ├── README.md           # This file
 ├── docs/               # Playbook: architecture, modules, integrations, GTM, tech stack
-├── src/                # Backend / APIs / integrations (to be implemented)
+├── backend/            # Working API and dashboard
+│   ├── app/            # FastAPI app, models, routers, seed
+│   ├── static/         # Dashboard (HTML/JS)
+│   └── requirements.txt
+├── src/                # Additional modules / integrations (future)
 ├── .gitignore
 └── LICENSE
 ```
+
+## Run the application
+
+**Requirements:** Python 3.10+
+
+```bash
+cd backend
+python -m venv .venv
+.venv\Scripts\activate   # Windows
+# source .venv/bin/activate   # macOS/Linux
+pip install -r requirements.txt
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+- **API:** http://localhost:8000  
+- **Interactive docs:** http://localhost:8000/docs  
+- **Dashboard:** http://localhost:8000/static/dashboard.html  
+
+On first run, the app creates the SQLite database and seeds a demo property, drop boxes, cashiers, tables, and an opening vault balance. Use the API or dashboard to run count sessions, open/close cage drawers, record vault transactions, table inventory, and compliance reports.
 
 ## Related Repos
 
@@ -51,7 +74,7 @@ This repo handles **count room, cage, and vault** (the house’s cash/chip flow 
 
 ## Status
 
-**Early stage.** This repo holds the 2025 playbook (architecture, modules, integrations, GTM) and will hold the implementation. Target: cloud-native, mobile-first, real-time variance alerts, surveillance integration, compliance-as-a-service.
+**Working MVP.** This repo includes a runnable FastAPI backend and dashboard for count room (sessions, drop boxes, count results, variances), cage (cashiers, drawers, transactions, reconciliation), vault (balance, transactions, reconciliation), table inventory (win/loss), and compliance reports (daily slot drop, daily table, variance report). Target next: cloud-native deploy, real-time variance alerts, surveillance integration, commission submission.
 
 ## License
 
